@@ -6,7 +6,8 @@ import os.path as path
 import scipy.io as sio
 import numpy as np
 from tqdm import tqdm
-from skimage.measure import compare_ssim, compare_psnr
+from skimage.metrics import structural_similarity as compare_ssim
+from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 
 
 def read_dir(dir_path, predicate=None, name_only=False):

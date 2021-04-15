@@ -331,6 +331,10 @@ class DenseNetADA(nn.Module):
                     memory_efficient=memory_efficient
                 )
             self.features.add_module('denseblock%d' % (i + 1), block)
+            self.num_maps = num_maps
+            self.kmax = kmax
+            self.kmin = kmin
+            self.alpha = alpha
             num_features = num_features + num_layers * growth_rate
 
             if i != len(block_config) - 1:
@@ -349,10 +353,6 @@ class DenseNetADA(nn.Module):
         # Bridge Layer
         self.brigde = nn.Conv2d(num_features, num_classes * num_maps, kernel_size=1)
 
-        # WildCat Layer
-        self.classwise_pooling = ClassWisePool(num_maps)           # class-wise pooling to generate M maps (num_maps) for each class, and pool
-        self.spatial_pooling = WildcatPool2d(kmax, kmin, alpha)    # spatial pooling to generate prediction vector
-
         # Official init from torch repo.
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -362,47 +362,42 @@ class DenseNetADA(nn.Module):
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 nn.init.constant_(m.bias, 0)
-
     def forward(self, x):
         features = self.features(x)
         out = F.relu(features, inplace=True)
         features_bridge = self.brigde(out)
-
-        wildcat_maps = self.classwise_pooling(features_bridge)
-        out = self.spatial_pooling(wildcat_maps)
+        wildcat_maps = ClassWisePoolFunction.apply(self.num_maps, features_bridge)
+        out = WildcatPool2dFunction.apply(self.kmax, self.kmin, self.alpha, wildcat_maps)
         return out, wildcat_maps
 
 
 '''
 WILDCAT Pooling
 '''
+def get_positive_k(k, n):
+    if k <= 0:
+        return 0
+    elif k < 1:
+        return round(k * n)
+    elif k > n:
+        return int(n)
+    else:
+        return int(k)
+
 class WildcatPool2dFunction(Function):
-    def __init__(self, kmax, kmin, alpha):
-        super(WildcatPool2dFunction, self).__init__()
+    @staticmethod
+    def forward(self, kmax, kmin, alpha, input):
         self.kmax = kmax
         self.kmin = kmin
         self.alpha = alpha
-
-    def get_positive_k(self, k, n):
-        if k <= 0:
-            return 0
-        elif k < 1:
-            return round(k * n)
-        elif k > n:
-            return int(n)
-        else:
-            return int(k)
-
-    def forward(self, input):
         batch_size = input.size(0)
         num_channels = input.size(1)
         h = input.size(2)
         w = input.size(3)
 
         n = h * w  # number of regions
-
-        kmax = self.get_positive_k(self.kmax, n)
-        kmin = self.get_positive_k(self.kmin, n)
+        kmax = get_positive_k(kmax, n)
+        kmin = get_positive_k(kmin, n)
 
         sorted, indices = input.new(), input.new().long()
         torch.sort(input.view(batch_size, num_channels, n), dim=2, descending=True, out=(sorted, indices))
@@ -417,6 +412,7 @@ class WildcatPool2dFunction(Function):
         self.save_for_backward(input)
         return output.view(batch_size, num_channels)
 
+    @staticmethod
     def backward(self, grad_output):
 
         input, = self.saved_tensors
@@ -428,8 +424,8 @@ class WildcatPool2dFunction(Function):
 
         n = h * w  # number of regions
 
-        kmax = self.get_positive_k(self.kmax, n)
-        kmin = self.get_positive_k(self.kmin, n)
+        kmax = get_positive_k(self.kmax, n)
+        kmin = get_positive_k(self.kmin, n)
 
         grad_output_max = grad_output.view(batch_size, num_channels, 1).expand(batch_size, num_channels, kmax)
 
@@ -445,33 +441,14 @@ class WildcatPool2dFunction(Function):
                 self.alpha / kmin)
             grad_input.add_(grad_input_min).div_(2)
 
-        return grad_input.view(batch_size, num_channels, h, w)
-
-
-class WildcatPool2d(nn.Module):
-    def __init__(self, kmax=1, kmin=None, alpha=1):
-        super(WildcatPool2d, self).__init__()
-        self.kmax = kmax
-        self.kmin = kmin
-        if self.kmin is None:
-            self.kmin = self.kmax
-        self.alpha = alpha
-
-    def forward(self, input):
-        return WildcatPool2dFunction(self.kmax, self.kmin, self.alpha)(input)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (kmax=' + str(self.kmax) + ', kmin=' + str(self.kmin) + ', alpha=' + str(
-            self.alpha) + ')'
+        return None, None, None, grad_input.view(batch_size, num_channels, h, w)
 
 
 class ClassWisePoolFunction(Function):
-    def __init__(self, num_maps):
-        super(ClassWisePoolFunction, self).__init__()
-        self.num_maps = num_maps
-
-    def forward(self, input):
+    @staticmethod
+    def forward(self, num_maps, input):
         # batch dimension
+        self.num_maps = num_maps
         batch_size, num_channels, h, w = input.size()
 
         if num_channels % self.num_maps != 0:
@@ -484,6 +461,7 @@ class ClassWisePoolFunction(Function):
         self.save_for_backward(input)
         return output.view(batch_size, num_outputs, h, w) / self.num_maps
 
+    @staticmethod
     def backward(self, grad_output):
         input, = self.saved_tensors
 
@@ -494,19 +472,7 @@ class ClassWisePoolFunction(Function):
         grad_input = grad_output.view(batch_size, num_outputs, 1, h, w).expand(batch_size, num_outputs, self.num_maps,
                                                                                h, w).contiguous()
 
-        return grad_input.view(batch_size, num_channels, h, w)
-
-
-class ClassWisePool(nn.Module):
-    def __init__(self, num_maps):
-        super(ClassWisePool, self).__init__()
-        self.num_maps = num_maps
-
-    def forward(self, input):
-        return ClassWisePoolFunction(self.num_maps)(input)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (num_maps={num_maps})'.format(num_maps=self.num_maps)
+        return None, grad_input.view(batch_size, num_channels, h, w)
 
 
 ##################################################################################

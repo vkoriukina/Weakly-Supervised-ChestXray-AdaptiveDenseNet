@@ -110,7 +110,10 @@ class ChestXray14_Test(Dataset):
     def __init__(self, opts=None):
         self.root = opts.data_root
         self.data_dir = os.path.join(self.root, 'images')
-        self.label_file = os.path.join(self.root, 'labels', 'test_list.txt')
+        if opts.test_list_box:
+            self.label_file = os.path.join(self.root, 'labels', opts.test_list_box)
+        else:
+            self.label_file = os.path.join(self.root, 'labels', 'test_list.txt')
 
         image_names = []
         labels = []
@@ -127,10 +130,8 @@ class ChestXray14_Test(Dataset):
         self.labels = labels
 
         self.n_classes = 14
-        self.class_name = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass'
-                                                                                      'Nodule', 'Pneumonia',
-                           'Pneumothorax', 'Consolidation', 'Edema'
-                                                            'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+        self.class_name = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass' 'Nodule', 'Pneumonia',
+                           'Pneumothorax', 'Consolidation', 'Edema' 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 
         self.T_must = transforms.Compose([
             transforms.Scale(opts.eval_osize, Image.BICUBIC),

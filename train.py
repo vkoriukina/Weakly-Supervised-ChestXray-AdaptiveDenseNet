@@ -33,7 +33,7 @@ parser.add_argument('--n_class', type=int, default=14, help='number of class typ
 # wildcat options
 parser.add_argument('--n_maps', type=int, default=3, help='number of maps for class-wise pooling')
 parser.add_argument('--kmax', type=float, default=1, help='kmax for spatial pooling')
-parser.add_argument('--kmin', type=float, default=None, help='kmin for spatial pooling')
+parser.add_argument('--kmin', type=float, default=0, help='kmin for spatial pooling')
 parser.add_argument('--alpha', type=float, default=1, help='alpha for spatial pooling')
 
 # training options
@@ -68,7 +68,7 @@ parser.add_argument('--output_path', default='./', type=str, help='Output path.'
 
 # other
 parser.add_argument('--num_workers', type=int, default=8, help='number of threads to load data')
-parser.add_argument('--gpu_ids', type=int, nargs='+', default=[0], help='list of gpu ids')
+parser.add_argument('--gpu_ids', type=int, nargs='+', default=[1], help='list of gpu ids')
 opts = parser.parse_args()
 
 options_str = json.dumps(opts.__dict__, indent=4, sort_keys=False)

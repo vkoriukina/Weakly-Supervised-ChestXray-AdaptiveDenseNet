@@ -25,6 +25,7 @@ parser.add_argument('--resume', type=str, default=None, help='Filename of the ch
 # dataset
 parser.add_argument('--dataset', type=str, default='ChestXray14', help='dataset name')
 parser.add_argument('--data_root', type=str, default='../Data/ChestXray14/', help='data root folder')
+parser.add_argument('--test_list_box', type=str, help='path to box labels')
 
 # network
 parser.add_argument('--net_G', type=str, default='densenetADA', help='densenet / densenetADA')
@@ -33,7 +34,7 @@ parser.add_argument('--n_class', type=int, default=14, help='number of class typ
 # wildcat options
 parser.add_argument('--n_maps', type=int, default=3, help='number of maps for class-wise pooling')
 parser.add_argument('--kmax', type=float, default=1, help='kmax for spatial pooling')
-parser.add_argument('--kmin', type=float, default=None, help='kmin for spatial pooling')
+parser.add_argument('--kmin', type=float, default=0, help='kmin for spatial pooling')
 parser.add_argument('--alpha', type=float, default=1, help='alpha for spatial pooling')
 
 # training options
@@ -68,7 +69,7 @@ parser.add_argument('--output_path', default='./', type=str, help='Output path.'
 
 # other
 parser.add_argument('--num_workers', type=int, default=8, help='number of threads to load data')
-parser.add_argument('--gpu_ids', type=int, nargs='+', default=[0], help='list of gpu ids')
+parser.add_argument('--gpu_ids', type=int, nargs='+', default=[1], help='list of gpu ids')
 opts = parser.parse_args()
 
 options_str = json.dumps(opts.__dict__, indent=4, sort_keys=False)
@@ -99,8 +100,10 @@ print('Start training at epoch {} \n'.format(ep0))
 
 # select dataset
 train_set, val_set, test_set = get_datasets(opts)
-train_loader = DataLoader(dataset=train_set, num_workers=opts.num_workers, batch_size=opts.batch_size, shuffle=True)
-val_loader = DataLoader(dataset=val_set, num_workers=opts.num_workers, batch_size=1, shuffle=False)
+if train_set:
+    train_loader = DataLoader(dataset=train_set, num_workers=opts.num_workers, batch_size=opts.batch_size, shuffle=True)
+if val_set:
+    val_loader = DataLoader(dataset=val_set, num_workers=opts.num_workers, batch_size=1, shuffle=False)
 test_loader = DataLoader(dataset=test_set, num_workers=opts.num_workers, batch_size=1, shuffle=False)
 
 # Setup directories
@@ -113,4 +116,4 @@ print('Test Evaluation ......')
 model.eval()
 with torch.no_grad():
     model.evaluate(test_loader)
-sio.savemat(os.path.join(image_directory, 'eval.mat'), model.results)
+    model.generate_heatmaps()
